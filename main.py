@@ -1,14 +1,118 @@
-from api import (
-    Record,
-    AddressBook,
-    get_upcoming_birthdays,
-    greetings,
-    help_api,
-    command_parser,
-    normalize_users_date,
-)
 import pickle
+from collections import UserDict
+from datetime import datetime, timedelta
 from abc import ABC, abstractmethod
+
+from api import errors_handler, get_upcoming_birthdays, help_api, command_parser
+
+
+class Field:
+    def __init__(self, value):
+        self.value = value
+
+    def __str__(self):
+        return str(self.value)
+
+    def __repr__(self):
+        return f"{self.value}"
+
+
+class Birthday(Field):
+    def __init__(self, value):
+        if not self.is_valid_date_format(value):
+            raise ValueError("Invalid date format. Use DD.MM.YYYY")
+
+        self.value = datetime.strptime(value, "%d.%m.%Y")
+
+    def is_valid_date_format(self, value):
+        try:
+            datetime.strptime(value, "%d.%m.%Y")
+            return True
+        except ValueError:
+            return False
+
+    def __repr__(self):
+        return f'{self.value.strftime("%d.%m.%Y")}'
+
+
+class Name(Field): ...
+
+
+class Phone(Field): ...
+
+
+class Record:
+    def __init__(self, name):
+        self.name = Name(name)
+        self.phones = []
+        self.birthday = None
+
+    @errors_handler
+    def add_birthday(self, value):
+        self.birthday = Birthday(value)
+
+    @errors_handler
+    def show_birthday(self):
+        if not self.birthday:
+            return print(f'Error')
+        return print(f'{self.name.value} have birthday: {self.birthday.value.strftime("%d.%m.%Y")}')
+
+    @staticmethod
+    def phone_is_exist(data, phone):
+        for p in data:
+            if p.value == phone:
+                return True
+
+    def edit_phone(self, old_phone, new_phone):
+        for p in self.phones:
+            if p.value == old_phone:
+                p.value = new_phone
+                return f"Phone {old_phone} edited to {new_phone}"
+        else:
+            return f"Phone {old_phone} is not exist!"
+
+    def add_phone(self, phone):
+        if self.phone_is_exist(self.phones, phone):
+            return print("This number already exist")
+
+        self.phones.append(Phone(phone))
+
+    def __str__(self):
+        if self.birthday:
+            return f"Contact name: {self.name.value} \nPhones: {'; '.join(p.value for p in self.phones)}\nBirthday: {self.birthday.value.strftime("%d.%m.%Y")}\n"
+
+        return f"Contact name: {self.name.value} \nPhones: {'; '.join(p.value for p in self.phones)}\nBirthday: {self.birthday}\n"
+
+
+class AddressBook(UserDict):
+    @errors_handler
+    def birthdays(self):
+        data = list(self.data.values())
+        upcoming_birthdays = get_upcoming_birthdays(data)
+        if len(upcoming_birthdays):
+            return upcoming_birthdays
+        else:
+            return "No users with upcoming birthdays"
+
+    def add_record(self, record):
+        self.data[record.name] = record
+
+    def find_record(self, target):
+        for i in self.data.values():
+            if i.name.value.lower() == target.lower():
+                return i
+
+    def show(self):
+        if len(self.data) == 0:
+            return "No data exist!"
+        for record in self.data.values():
+            return record
+
+    def remove(self, target):
+        for record in list(self.data.keys()):
+            if record.value == target:
+                del self.data[record]
+                return f"User {target} has been deleted!"
 
 
 class UserInterface(ABC):
@@ -53,7 +157,7 @@ def main():
 
         match (command):
             case "hello" | "start":
-                cli.show_message(greetings())
+                cli.show_message("Welcome to CLI assistant 🔥")
 
             case "add" | "create":
                 if len(args) < 2:
@@ -72,7 +176,7 @@ def main():
                 cli.show_message(exist)
 
             case "birthdays" | "b":
-                book.birthdays()
+                cli.show_message(book.birthdays())
 
             case "show_birthday":
                 if len(args) < 1:
@@ -89,7 +193,6 @@ def main():
                     cli.show_message(
                         "Please enter, correct args. Example: 'add_birthday Oleh 22.03.2024'"
                     )
-
                     continue
                 exist_record = book.find_record(name)
                 if exist_record:
@@ -115,10 +218,10 @@ def main():
                 book.remove(name)
 
             case "all" | "show":
-                book.show()
+                cli.show_message(book.show())
 
             case "help" | "info":
-                print(help_api())
+                cli.show_message(help_api())
 
             case command if command in exit_commands:
                 save_data(book)
